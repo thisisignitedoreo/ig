@@ -13,6 +13,7 @@ typedef struct {
     float scroll;
     int zorder;
     RenderTexture2D texture;
+    int topbar_size;
 } IgWindow;
 
 typedef struct {
@@ -57,6 +58,9 @@ IGAPI bool ig_radio(const char* text, int value, int *store);
 IGAPI bool ig_checkbox(const char* text, bool* store);
 // Checkbox
 
+IGAPI void ig_strap();
+// Blit all windows to the screen
+
 IGAPI void ig_render();
 // Blit all windows to the screen
 
@@ -70,6 +74,7 @@ IgWindow* ig_windows = 0;
 int ig_dragging = -1;
 Vector2 ig_dragging_origin = {0};
 int ig_tempy = 0;
+int ig_tempz = 0;
 int ig_topbar_size = 0;
 int ig_resize_border = 4;
 int ig_resize_overhang = 3;
@@ -111,20 +116,16 @@ IGAPI void ig_begin_window(const char* title, int flags, Rectangle rects) {
     bool resizing = flags & IG_RESIZABLE;
     bool moving = flags & IG_MOVABLE;
 
-    int max_zorder = -1;
 
     for (size_t i = 0; i < da_length(ig_windows); i++) {
         if (strcmp(ig_windows[i].title, title) == 0) {
             w = i;
         }
-        if (ig_windows[i].zorder > max_zorder) {
-            max_zorder = ig_windows[i].zorder;
-        }
     }
     if (w == -1) {
         w = da_length(ig_windows);
-        IgWindow window = {title, rects, 0, max_zorder+1, {0}};
-        max_zorder++;
+        IgWindow window = {title, rects, 0, ig_tempz, {0}, 0};
+        ig_tempz++;
         ig_windows = _da_push(ig_windows, &window);
     }
 
@@ -137,16 +138,11 @@ IGAPI void ig_begin_window(const char* title, int flags, Rectangle rects) {
     if (topbar) topbar_size = title_size.y + ig_style.pad*2;
     else topbar_size = 0;
     ig_topbar_size = topbar_size;
+    ig_windows[w].topbar_size = topbar_size;
     ig_tempy = topbar_size;
 
     Rectangle rect = { window.rect.x, window.rect.y, window.rect.width, topbar_size };
     Rectangle rectfull = { window.rect.x, window.rect.y, window.rect.width, topbar_size+window.rect.height };
-
-    if (IsMouseButtonDown(0) && CheckCollisionPointRec(GetMousePosition(), rectfull) && ig_active_window != w && ig_resizing_window == -1 && ig_dragging == -1) {
-        ig_active_window = w;
-        // ig_windows[max_zorder_w].zorder = ig_windows[w].zorder;
-        ig_windows[w].zorder = max_zorder+1;
-    }
 
     Rectangle resize_rect_u = {
         window.rect.x-ig_resize_border,
@@ -190,11 +186,15 @@ IGAPI void ig_begin_window(const char* title, int flags, Rectangle rects) {
     }
     BeginTextureMode(ig_windows[w].texture);
 
-    if (IsMouseButtonDown(0) && ig_resizing_window == -1 && ig_dragging == -1 && resizing) {
-        if (CheckCollisionPointRec(GetMousePosition(), resize_rect_u)) { ig_resizing[0] = true; ig_resizing_window = w; }
-        if (CheckCollisionPointRec(GetMousePosition(), resize_rect_d)) { ig_resizing[1] = true; ig_resizing_window = w; }
-        if (CheckCollisionPointRec(GetMousePosition(), resize_rect_l)) { ig_resizing[2] = true; ig_resizing_window = w; }
-        if (CheckCollisionPointRec(GetMousePosition(), resize_rect_r)) { ig_resizing[3] = true; ig_resizing_window = w; }
+    if (IsMouseButtonDown(0) && ig_resizing_window == -1 && ig_dragging == -1 && resizing && w == ig_active_window) {
+        if (CheckCollisionPointRec(GetMousePosition(), resize_rect_u)) { ig_resizing[0] = true; ig_resizing_window = w; SetMouseCursor(MOUSE_CURSOR_RESIZE_NS); }
+        if (CheckCollisionPointRec(GetMousePosition(), resize_rect_d)) { ig_resizing[1] = true; ig_resizing_window = w; SetMouseCursor(MOUSE_CURSOR_RESIZE_NS); }
+        if (CheckCollisionPointRec(GetMousePosition(), resize_rect_l)) { ig_resizing[2] = true; ig_resizing_window = w; SetMouseCursor(MOUSE_CURSOR_RESIZE_EW); }
+        if (CheckCollisionPointRec(GetMousePosition(), resize_rect_r)) { ig_resizing[3] = true; ig_resizing_window = w; SetMouseCursor(MOUSE_CURSOR_RESIZE_EW); }
+        if (CheckCollisionPointRec(GetMousePosition(), resize_rect_u) && CheckCollisionPointRec(GetMousePosition(), resize_rect_l)) { SetMouseCursor(MOUSE_CURSOR_RESIZE_NWSE); }
+        if (CheckCollisionPointRec(GetMousePosition(), resize_rect_u) && CheckCollisionPointRec(GetMousePosition(), resize_rect_r)) { SetMouseCursor(MOUSE_CURSOR_RESIZE_NESW); }
+        if (CheckCollisionPointRec(GetMousePosition(), resize_rect_d) && CheckCollisionPointRec(GetMousePosition(), resize_rect_l)) { SetMouseCursor(MOUSE_CURSOR_RESIZE_NESW); }
+        if (CheckCollisionPointRec(GetMousePosition(), resize_rect_d) && CheckCollisionPointRec(GetMousePosition(), resize_rect_r)) { SetMouseCursor(MOUSE_CURSOR_RESIZE_NWSE); }
     }
     if (resizing && ig_resizing_window == w && ig_resizing[0]) { ig_windows[ig_resizing_window].rect.y += GetMouseDelta().y; ig_windows[ig_resizing_window].rect.height -= GetMouseDelta().y;  }
     if (resizing && ig_resizing_window == w && ig_resizing[1]) { ig_windows[ig_resizing_window].rect.height += GetMouseDelta().y; }
@@ -214,19 +214,19 @@ IGAPI void ig_begin_window(const char* title, int flags, Rectangle rects) {
         BeginTextureMode(ig_windows[w].texture);
     }
 
-    if (moving && ig_resizing_window == -1 && IsMouseButtonPressed(0) && CheckCollisionPointRec(GetMousePosition(), rect) && ig_dragging == -1) { ig_dragging = w; }
+    if (ig_resizing_window == -1 && IsMouseButtonPressed(0) && CheckCollisionPointRec(GetMousePosition(), rect) && ig_dragging == -1 && w == ig_active_window) { ig_dragging = w; }
     if (moving && ig_resizing_window == -1 && ig_dragging == w) {
         Vector2 pos = GetMouseDelta();
         ig_windows[w].rect.x += pos.x;
         ig_windows[w].rect.y += pos.y;
     }
-    if (moving && ig_resizing_window == -1 && IsMouseButtonReleased(0) && ig_dragging == w) {
+    if (ig_resizing_window == -1 && IsMouseButtonReleased(0) && ig_dragging == w) {
         ig_dragging = -1;
     }
 
     BeginScissorMode(0, 0, window.rect.width, topbar_size);
     ClearBackground(ig_active_window == w ? ig_style.abg_color : ig_style.ibg_color);
-    DrawTextEx(ig_style.font, title, (Vector2) { ig_style.pad, ig_style.pad }, ig_style.font_size, ig_style.spacing, ig_style.fg_color);
+    DrawTextEx(ig_style.font, TextFormat("%s (wid = %d, active_wid = %d, w.zorder = %d, @%.0f %.0f, %.0fx%.0f)", title, w, ig_active_window, window.zorder, window.rect.x, window.rect.y, window.rect.width, window.rect.height), (Vector2) { ig_style.pad, ig_style.pad }, ig_style.font_size, ig_style.spacing, ig_style.fg_color);
     EndScissorMode();
 
     DrawRectangle(0, topbar_size, window.rect.width, window.rect.height, ig_style.bg_color);
@@ -265,11 +265,50 @@ IGAPI void ig_end_window() {
     ig_render_rect = (Rectangle) {0};
 }
 
+IGAPI void ig_strap() {
+    ig_tempz = 0;
+    int* zorder = da_new(int);
+    for (size_t i = 0; i < da_length(ig_windows); i++) {
+        da_push(zorder, i);
+    }
+    for (size_t i = 0; i < da_length(zorder); i++) {
+        for (size_t j = 0; j < da_length(zorder)-i-1; j++) {
+            if (ig_windows[zorder[j]].zorder < ig_windows[zorder[j+1]].zorder) {
+                int t = zorder[j];
+                zorder[j] = zorder[j+1];
+                zorder[j+1] = t;
+            }
+        }
+    }
+
+    int old_aw = ig_active_window;
+
+    for (size_t i = 0; i < da_length(zorder); i++) {
+        IgWindow window = ig_windows[i];
+        Rectangle rectfull = { window.rect.x, window.rect.y, window.rect.width, window.topbar_size+window.rect.height };
+        if (CheckCollisionPointRec(GetMousePosition(), rectfull)) {
+            if (ig_resizing_window == -1 && ig_dragging == -1 && IsMouseButtonDown(0)) {
+                ig_active_window = i;
+            }
+        }
+    }
+
+    if (old_aw != ig_active_window) {
+        int j = da_length(zorder)-1;
+        for (size_t i = 0; i < da_length(zorder); i++) {
+            int w = zorder[i];
+            if (w == ig_active_window) continue;
+            ig_windows[w].zorder = j;
+            j--;
+        }
+        ig_windows[ig_active_window].zorder = da_length(zorder);
+    }
+}
+
 IGAPI void ig_render() {
     int* zorder = da_new(int);
     for (size_t i = 0; i < da_length(ig_windows); i++) {
         da_push(zorder, i);
-       
     }
     for (size_t i = 0; i < da_length(zorder); i++) {
         for (size_t j = 0; j < da_length(zorder)-i-1; j++) {
@@ -280,6 +319,7 @@ IGAPI void ig_render() {
             }
         }
     }
+
     for (size_t i = 0; i < da_length(zorder); i++) {
         Texture texture = ig_windows[zorder[i]].texture.texture;
         DrawTextureRec(texture, (Rectangle) {.x = 0, .y = -texture.height, .width = texture.width, .height = -texture.height}, (Vector2) {ig_windows[zorder[i]].rect.x, ig_windows[zorder[i]].rect.y}, WHITE);

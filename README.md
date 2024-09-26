@@ -16,6 +16,10 @@ download src/ig.h, put it into your projects src folder, #define IG_IMPLEMENTATI
   
   call after main loop
 
+- `void ig_strap()`: calculate z-orders
+  
+  call in main loop, before defining all windows
+
 - `void ig_render()`: blit all windows to screen
   
   call in main loop, after defining all windows
